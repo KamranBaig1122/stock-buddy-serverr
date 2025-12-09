@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+.DS_Store
+proo.txt
+POSTMAN_TESTING_GUIDE.md
+src/fcm/fcm.json
