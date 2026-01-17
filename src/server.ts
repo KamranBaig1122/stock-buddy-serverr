@@ -18,6 +18,35 @@ import transactionRoutes from './routes/transactions';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const NODE_ENV = process.env.NODE_ENV || 'development';
+
+// Check FCM configuration from environment
+const checkFCMConfig = () => {
+  console.log('\n📱 FCM Configuration Check:');
+  console.log('─'.repeat(50));
+  
+  if (process.env.FCM_SERVICE_ACCOUNT) {
+    try {
+      const fcmConfig = JSON.parse(process.env.FCM_SERVICE_ACCOUNT);
+      console.log('✅ FCM_SERVICE_ACCOUNT: Found');
+      console.log('   Project ID:', fcmConfig.project_id || 'Not set');
+      console.log('   Client Email:', fcmConfig.client_email || 'Not set');
+      console.log('   Private Key ID:', fcmConfig.private_key_id ? fcmConfig.private_key_id.substring(0, 20) + '...' : 'Not set');
+      console.log('   Has Private Key:', fcmConfig.private_key ? 'Yes' : 'No');
+      console.log('   Type:', fcmConfig.type || 'Not set');
+    } catch (error: any) {
+      console.error('❌ FCM_SERVICE_ACCOUNT: Invalid JSON format');
+      console.error('   Error:', error.message);
+    }
+  } else {
+    console.error('❌ FCM_SERVICE_ACCOUNT: Not set in environment variables');
+    console.error('   FCM notifications will not work without this variable!');
+  }
+  console.log('─'.repeat(50) + '\n');
+};
+
+// Check FCM configuration
+checkFCMConfig();
 
 // Connect to database
 connectDB();
@@ -43,10 +72,12 @@ app.get('/', (req, res) => {
     message: 'StockBuddy Backend API is LIVE!',
     timestamp: new Date().toISOString(),
     status: 'Server Running',
-    version: '1.0.0'
+    version: '1.0.0',
+    environment: NODE_ENV
   });
 });
 
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`Environment: ${NODE_ENV}`);
 });

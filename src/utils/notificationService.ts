@@ -1,7 +1,5 @@
 import { GoogleAuth } from 'google-auth-library';
 import axios from 'axios';
-import path from 'path';
-import fs from 'fs';
 import User from '../models/User';
 import { sendEmail } from './emailService';
 
@@ -16,28 +14,38 @@ interface NotificationOptions {
   emailHtml?: string;
 }
 
-// Load service account credentials
-// Works in both dev (ts-node-dev) and production (compiled)
-const getFcmConfigPath = () => {
-  // In development with ts-node-dev, __dirname points to src/utils
-  // In production, __dirname points to dist/utils
-  // Try src first (dev), then dist (prod), then relative to process.cwd()
-  const possiblePaths = [
-    path.join(__dirname, '../fcm/fcm.json'), // dev: src/utils -> src/fcm
-    path.join(__dirname, '../../src/fcm/fcm.json'), // prod: dist/utils -> src/fcm
-    path.join(process.cwd(), 'src/fcm/fcm.json'), // fallback
-  ];
-  
-  for (const configPath of possiblePaths) {
-    if (fs.existsSync(configPath)) {
-      return configPath;
-    }
+// Load service account credentials from environment variable only
+const getServiceAccount = () => {
+  if (!process.env.FCM_SERVICE_ACCOUNT) {
+    throw new Error(
+      'FCM_SERVICE_ACCOUNT environment variable is required. ' +
+      'Please set it in your environment variables with the Firebase service account JSON as a single-line string.'
+    );
   }
-  
-  throw new Error('FCM config file not found. Please ensure src/fcm/fcm.json exists.');
+
+  try {
+    const serviceAccount = JSON.parse(process.env.FCM_SERVICE_ACCOUNT);
+    
+    // Validate required fields
+    const requiredFields = ['type', 'project_id', 'private_key', 'client_email'];
+    const missingFields = requiredFields.filter(field => !serviceAccount[field]);
+    
+    if (missingFields.length > 0) {
+      throw new Error(`FCM_SERVICE_ACCOUNT is missing required fields: ${missingFields.join(', ')}`);
+    }
+    
+    return serviceAccount;
+  } catch (error: any) {
+    if (error instanceof SyntaxError) {
+      throw new Error(
+        'Failed to parse FCM_SERVICE_ACCOUNT. Make sure it is valid JSON: ' + error.message
+      );
+    }
+    throw error;
+  }
 };
 
-const serviceAccount = JSON.parse(fs.readFileSync(getFcmConfigPath(), 'utf8'));
+const serviceAccount = getServiceAccount();
 
 // Get access token for Firebase Admin SDK
 async function getAccessToken(): Promise<string> {
