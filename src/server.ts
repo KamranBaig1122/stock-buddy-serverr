@@ -17,7 +17,7 @@ import userRoutes from './routes/users';
 import transactionRoutes from './routes/transactions';
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT) || 5000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Check FCM configuration from environment
@@ -48,8 +48,12 @@ const checkFCMConfig = () => {
 // Check FCM configuration
 checkFCMConfig();
 
-// Connect to database
-connectDB();
+// Connect to database (with error handling)
+connectDB().catch((error) => {
+  console.error('❌ Failed to connect to database:', error);
+  console.error('   Server will continue but database operations will fail.');
+  console.error('   Please check your MONGODB_URI environment variable.\n');
+});
 
 // Middleware
 app.use(cors());
@@ -77,7 +81,11 @@ app.get('/', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-  console.log(`Environment: ${NODE_ENV}`);
+// Listen on 0.0.0.0 to accept connections from Railway
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🚀 Server is running!`);
+  console.log(`   Port: ${PORT}`);
+  console.log(`   Environment: ${NODE_ENV}`);
+  console.log(`   Listening on: 0.0.0.0:${PORT}`);
+  console.log(`\n✅ API is ready to accept requests!\n`);
 });
