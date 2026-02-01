@@ -6,6 +6,17 @@ import mongoose from 'mongoose';
 import { notifyUsers } from '../utils/notificationService';
 import { notifyLowStock } from '../utils/inventoryAlerts';
 
+const parseBody = (body: any) => {
+  if (typeof body === 'string') {
+    try {
+      return JSON.parse(body);
+    } catch (err) {
+      return body;
+    }
+  }
+  return body;
+};
+
 const adjustStockForTransfer = (
   item: any,
   fromLocationId: string,
@@ -38,7 +49,7 @@ const adjustStockForTransfer = (
 
 export const addStock = async (req: AuthRequest, res: Response) => {
   try {
-    const { itemId, locationId, quantity, note, photo } = req.body;
+    const { itemId, locationId, quantity, note, photo } = parseBody(req.body) || {};
 
     console.log('Add stock request:', { itemId, locationId, quantity, note });
 
@@ -51,10 +62,18 @@ export const addStock = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Item not found' });
     }
 
+    // Get location name for email
+    const Location = require('../models/Location').default;
+    const location = await Location.findById(locationId);
+    const locationName = location?.name || 'Unknown Location';
+
     // Update item location stock
     const locationIndex = item.locations.findIndex(
       loc => loc.locationId.toString() === locationId
     );
+
+    const previousStock = locationIndex >= 0 ? item.locations[locationIndex].quantity : 0;
+    const newStock = previousStock + quantity;
 
     if (locationIndex >= 0) {
       item.locations[locationIndex].quantity += quantity;
@@ -77,6 +96,24 @@ export const addStock = async (req: AuthRequest, res: Response) => {
 
     await transaction.save();
 
+    // Prepare email attachments if photo exists
+    const attachments = [];
+    if (photo && photo.startsWith('data:image/')) {
+      const matches = photo.match(/^data:image\/(\w+);base64,(.+)$/);
+      if (matches) {
+        const [, extension, base64Data] = matches;
+        attachments.push({
+          filename: `stock_add_${Date.now()}.${extension}`,
+          content: base64Data,
+          encoding: 'base64',
+          cid: 'stock_photo'
+        });
+      }
+    }
+
+    const currentDate = new Date().toLocaleString();
+    const photoSection = photo ? '<p><img src="cid:stock_photo" alt="Stock Photo" style="max-width: 300px; border-radius: 8px;"/></p>' : '';
+
     await notifyUsers({
       title: 'Stock Added',
       message: `${item.name} stock increased by ${quantity} ${item.unit}.`,
@@ -87,13 +124,45 @@ export const addStock = async (req: AuthRequest, res: Response) => {
       },
       emailSubject: `StockBuddy Update – ${item.name} stock added`,
       emailHtml: `
-        <p>Stock was added for <strong>${item.name}</strong>.</p>
-        <ul>
-          <li>Quantity: ${quantity} ${item.unit}</li>
-          <li>Item SKU: ${item.sku}</li>
-        </ul>
-        <p>Transaction ID: ${transaction.id}</p>
-      `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #2563eb; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px;">📦 Stock Added</h2>
+          
+          <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="margin-top: 0; color: #1f2937;">Item Details</h3>
+            <ul style="list-style: none; padding: 0;">
+              <li><strong>Item:</strong> ${item.name}</li>
+              <li><strong>SKU:</strong> ${item.sku}</li>
+              <li><strong>Unit:</strong> ${item.unit}</li>
+              <li><strong>Threshold:</strong> ${item.threshold} ${item.unit}</li>
+            </ul>
+          </div>
+
+          <div style="background-color: #ecfdf5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="margin-top: 0; color: #065f46;">Stock Movement</h3>
+            <ul style="list-style: none; padding: 0;">
+              <li><strong>Quantity Added:</strong> +${quantity} ${item.unit}</li>
+              <li><strong>Previous Stock:</strong> ${previousStock} ${item.unit}</li>
+              <li><strong>New Stock:</strong> ${newStock} ${item.unit}</li>
+              <li><strong>Location:</strong> ${locationName}</li>
+            </ul>
+          </div>
+
+          ${note ? `
+          <div style="background-color: #fef3c7; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <strong>Note:</strong> ${note}
+          </div>
+          ` : ''}
+
+          ${photoSection}
+
+          <div style="background-color: #f1f5f9; padding: 15px; border-radius: 8px; margin: 20px 0; font-size: 14px; color: #64748b;">
+            <p><strong>Added by:</strong> ${req.user?.name || 'Staff'}</p>
+            <p><strong>Date & Time:</strong> ${currentDate}</p>
+            <p><strong>Transaction ID:</strong> ${transaction.id}</p>
+          </div>
+        </div>
+      `,
+      attachments
     });
 
     await notifyLowStock(item);
@@ -107,12 +176,21 @@ export const addStock = async (req: AuthRequest, res: Response) => {
 
 export const transferStock = async (req: AuthRequest, res: Response) => {
   try {
-    const { itemId, fromLocationId, toLocationId, quantity, note } = req.body;
+    const { itemId, fromLocationId, toLocationId, quantity, note } = parseBody(req.body) || {};
 
     const item = await Item.findById(itemId);
     if (!item) {
       return res.status(404).json({ error: 'Item not found' });
     }
+
+    // Get location names for email
+    const Location = require('../models/Location').default;
+    const [fromLocation, toLocation] = await Promise.all([
+      Location.findById(fromLocationId),
+      Location.findById(toLocationId)
+    ]);
+    const fromLocationName = fromLocation?.name || 'Unknown Location';
+    const toLocationName = toLocation?.name || 'Unknown Location';
 
     const fromLocationIndex = item.locations.findIndex(
       (loc: any) => loc.locationId.toString() === fromLocationId
@@ -150,7 +228,7 @@ export const transferStock = async (req: AuthRequest, res: Response) => {
 
       await notifyUsers({
         title: 'Stock Transfer Completed',
-        message: `${item.name} moved from location ${fromLocationId} to ${toLocationId}.`,
+        message: `${item.name} moved from ${fromLocationName} to ${toLocationName}.`,
         data: {
           itemId: item.id,
           transactionId: transaction.id,
@@ -162,8 +240,8 @@ export const transferStock = async (req: AuthRequest, res: Response) => {
           <p>Stock transfer completed for <strong>${item.name}</strong>.</p>
           <ul>
             <li>Quantity: ${quantity} ${item.unit}</li>
-            <li>From: ${fromLocationId}</li>
-            <li>To: ${toLocationId}</li>
+            <li>From: ${fromLocationName}</li>
+            <li>To: ${toLocationName}</li>
           </ul>
           <p>Transaction ID: ${transaction.id}</p>
         `
@@ -201,6 +279,8 @@ export const transferStock = async (req: AuthRequest, res: Response) => {
         <ul>
           <li>Item: ${item.name} (${item.sku})</li>
           <li>Quantity: ${quantity} ${item.unit}</li>
+          <li>From: ${fromLocationName}</li>
+          <li>To: ${toLocationName}</li>
         </ul>
         <p>Requested by: ${req.user?.name || 'Staff'}.</p>
       `
@@ -250,7 +330,7 @@ export const getStockByLocation = async (req: AuthRequest, res: Response) => {
 
 export const reviewTransfer = async (req: AuthRequest, res: Response) => {
   try {
-    const { transactionId, approved, note } = req.body;
+    const { transactionId, approved, note } = parseBody(req.body) || {};
 
     const transaction = await Transaction.findById(transactionId);
     if (!transaction || transaction.type !== 'TRANSFER' || transaction.status !== 'pending') {
@@ -265,6 +345,15 @@ export const reviewTransfer = async (req: AuthRequest, res: Response) => {
     if (!item) {
       return res.status(404).json({ error: 'Item not found' });
     }
+
+    // Get location names for email
+    const Location = require('../models/Location').default;
+    const [fromLocation, toLocation] = await Promise.all([
+      Location.findById(transaction.fromLocationId),
+      Location.findById(transaction.toLocationId)
+    ]);
+    const fromLocationName = fromLocation?.name || 'Unknown Location';
+    const toLocationName = toLocation?.name || 'Unknown Location';
 
     if (approved) {
       try {
@@ -299,8 +388,8 @@ export const reviewTransfer = async (req: AuthRequest, res: Response) => {
           <p>The pending stock transfer for <strong>${item.name}</strong> has been approved.</p>
           <ul>
             <li>Quantity: ${transaction.quantity} ${item.unit}</li>
-            <li>From: ${transaction.fromLocationId}</li>
-            <li>To: ${transaction.toLocationId}</li>
+            <li>From: ${fromLocationName}</li>
+            <li>To: ${toLocationName}</li>
           </ul>
           <p>Approved by: ${req.user?.name || 'Admin'}</p>
         `
@@ -327,6 +416,10 @@ export const reviewTransfer = async (req: AuthRequest, res: Response) => {
       emailSubject: `StockBuddy Update – Transfer rejected for ${item.name}`,
       emailHtml: `
         <p>The pending stock transfer for <strong>${item.name}</strong> has been rejected.</p>
+        <ul>
+          <li>From: ${fromLocationName}</li>
+          <li>To: ${toLocationName}</li>
+        </ul>
         <p>Reason/Note: ${transaction.note || 'Not provided'}.</p>
       `
     });

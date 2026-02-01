@@ -59,6 +59,11 @@ connectDB().catch((error) => {
 app.use(cors());
 app.use(express.json({ limit: '10mb' })); // For base64 images
 app.use(express.urlencoded({ extended: true }));
+// Parse text bodies (e.g., Postman sending Content-Type: text/plain with JSON payload)
+app.use(express.text({ type: 'text/*', limit: '10mb' }));
+// Convert text/* JSON bodies into parsed objects for downstream controllers
+import parseTextJson from './middleware/parseTextJson';
+app.use(parseTextJson);
 
 // Routes
 app.use('/api/auth', authRoutes);

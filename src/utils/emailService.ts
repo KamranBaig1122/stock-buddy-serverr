@@ -22,9 +22,15 @@ interface SendEmailOptions {
   bcc?: string[];
   subject: string;
   html: string;
+  attachments?: Array<{
+    filename: string;
+    content: string;
+    encoding: string;
+    cid?: string;
+  }>;
 }
 
-export const sendEmail = async ({ to, bcc, subject, html }: SendEmailOptions) => {
+export const sendEmail = async ({ to, bcc, subject, html, attachments }: SendEmailOptions) => {
   try {
     const transporter = getTransporter();
 
@@ -33,7 +39,8 @@ export const sendEmail = async ({ to, bcc, subject, html }: SendEmailOptions) =>
       to: to || process.env.EMAIL_USER,
       bcc,
       subject,
-      html
+      html,
+      attachments
     };
 
     const result = await transporter.sendMail(mailOptions);

@@ -12,6 +12,12 @@ interface NotificationOptions {
   roles?: UserRole[];
   emailSubject?: string;
   emailHtml?: string;
+  attachments?: Array<{
+    filename: string;
+    content: string;
+    encoding: string;
+    cid?: string;
+  }>;
 }
 
 // Load service account credentials from environment variable only
@@ -143,7 +149,13 @@ const sendPushNotifications = async (
 const sendEmailNotifications = async (
   emails: string[],
   subject: string,
-  html: string
+  html: string,
+  attachments?: Array<{
+    filename: string;
+    content: string;
+    encoding: string;
+    cid?: string;
+  }>
 ) => {
   if (!emails.length) {
     return;
@@ -154,7 +166,8 @@ const sendEmailNotifications = async (
       to: process.env.EMAIL_USER,
       bcc: emails,
       subject,
-      html
+      html,
+      attachments
     });
   } catch (error) {
     console.error('Failed to send email notifications:', error);
@@ -168,7 +181,8 @@ export const notifyUsers = async ({
   data,
   roles,
   emailSubject,
-  emailHtml
+  emailHtml,
+  attachments
 }: NotificationOptions) => {
   // Build filter for users based on roles (same as email targeting)
   const filter: Record<string, unknown> = { isActive: true };
@@ -198,7 +212,7 @@ export const notifyUsers = async ({
 
   // Send email notifications independently (only if emailSubject and emailHtml provided)
   if (emailSubject && emailHtml && emails.length > 0) {
-    await sendEmailNotifications(emails, emailSubject, emailHtml).catch(error => {
+    await sendEmailNotifications(emails, emailSubject, emailHtml, attachments).catch(error => {
       console.error('Failed to send email notifications:', error);
     });
   }
