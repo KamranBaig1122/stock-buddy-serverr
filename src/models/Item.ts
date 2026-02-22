@@ -34,4 +34,6 @@ const ItemSchema = new Schema<IItem>({
   timestamps: true
 });
 
+ItemSchema.index({ status: 1 });
+
 export default mongoose.model<IItem>('Item', ItemSchema);

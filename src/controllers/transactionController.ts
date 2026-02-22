@@ -15,17 +15,19 @@ export const getTransactions = async (req: AuthRequest, res: Response) => {
       if (endDate) filter.createdAt.$lte = new Date(endDate as string);
     }
 
-    const transactions = await Transaction.find(filter)
-      .populate('itemId', 'name sku')
-      .populate('fromLocationId', 'name')
-      .populate('toLocationId', 'name')
-      .populate('createdBy', 'name')
-      .populate('approvedBy', 'name')
-      .sort({ createdAt: -1 })
-      .limit(Number(limit))
-      .skip((Number(page) - 1) * Number(limit));
-
-    const total = await Transaction.countDocuments(filter);
+    const [transactions, total] = await Promise.all([
+      Transaction.find(filter)
+        .populate('itemId', 'name sku')
+        .populate('fromLocationId', 'name')
+        .populate('toLocationId', 'name')
+        .populate('createdBy', 'name')
+        .populate('approvedBy', 'name')
+        .sort({ createdAt: -1 })
+        .limit(Number(limit))
+        .skip((Number(page) - 1) * Number(limit))
+        .lean(),
+      Transaction.countDocuments(filter)
+    ]);
 
     res.json({
       transactions,

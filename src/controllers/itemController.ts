@@ -32,13 +32,17 @@ export const getItems = async (req: AuthRequest, res: Response) => {
   try {
     const items = await Item.find({ status: 'active' })
       .populate('locations.locationId', 'name')
-      .populate('createdBy', 'name');
+      .populate('createdBy', 'name')
+      .lean();
     
-    const itemsWithStock = items.map(item => ({
-      ...item.toObject(),
-      totalStock: item.locations.reduce((sum, loc) => sum + loc.quantity, 0),
-      stockStatus: item.locations.reduce((sum, loc) => sum + loc.quantity, 0) <= item.threshold ? 'low' : 'sufficient'
-    }));
+    const itemsWithStock = items.map(item => {
+      const totalStock = item.locations.reduce((sum, loc) => sum + loc.quantity, 0);
+      return {
+        ...item,
+        totalStock,
+        stockStatus: totalStock <= item.threshold ? 'low' : 'sufficient'
+      };
+    });
 
     res.json(itemsWithStock);
   } catch (error) {
