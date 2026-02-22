@@ -31,6 +31,7 @@ export const createItem = async (req: AuthRequest, res: Response) => {
 export const getItems = async (req: AuthRequest, res: Response) => {
   try {
     const items = await Item.find({ status: 'active' })
+      .select('-image')
       .populate('locations.locationId', 'name')
       .populate('createdBy', 'name')
       .lean();
